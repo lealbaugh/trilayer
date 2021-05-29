@@ -86,6 +86,15 @@ window.onload = function() {
 	// ...begin.
 	animate();
 
+	initText();
+}
+
+function initText() {
+	var instructions = document.createElement('div');
+	instructions.id = "instructions";
+	instructions.setAttribute("style", 'position: absolute; top: 1em; left: 1em; color: white; font-family: "Helvetica Neue", Helvetica, sans-serif; font-weight: bold;');
+	document.body.appendChild( instructions );
+	instructions.innerHTML = "click to select<br>shift-click to rectangle-select<br>'d' to deselect all<br>left/right arrows to move selected stitches";
 }
 
 function keyPress(e) {
@@ -101,6 +110,11 @@ function keyPress(e) {
 				sheet.updateNoodles();
 			});
 		}
+	}
+	if (e.code == "KeyD") {
+		selected.forEach(function (obj) {
+			obj.unselect();
+		});
 	}
 }
 
