@@ -284,58 +284,6 @@ class Stitch extends THREE.Mesh {
 	}
  }
 
-// // https://threejs.org/docs/index.html#api/en/extras/curves/CatmullRomCurve3
-// class Noodle extends THREE.Line {
-// 	constructor(sheet, stitches, color) {
-// 		var geom = new THREE.BufferGeometry();
-// 		var positions = new Float32Array( stitches.length * 3 ); // 3 vertices per point
-// 		for ( var i = 0; i < stitches.length; i ++ ) {
-// 			var pos = stitches[i].position;
-// 		    positions[i * 3] = pos.x;
-// 		    positions[(i * 3)+1] = pos.y;
-// 		    positions[(i * 3)+2] = pos.z;
-// 		}
-// 		geom.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
-
-
-// 		// var curve = new THREE.CatmullRomCurve3(locs);
-// 		// var points = curve.getPoints( sheetWidth * 4 );
-// 		// var geom = new THREE.BufferGeometry().setFromPoints( points );
-// 		var mat = new THREE.LineBasicMaterial( { color : color, linewidth: 100} );
-// 		// var mat = new LineMaterial( { color: color, linewidth: 10,  vertexColors: true, dashed: false, alphaToCoverage: true} );
-
-// 		super(geom, mat);
-// 		this.stitches = stitches;
-// 		this.sheet = sheet;
-// 		this.sheet.add(this);
-// 	}
-
-// 	// getStitchLocs(stitchList) {
-// 	// 	var locs = [];
-// 	// 	for (var i=0; i<stitchList.length;i++) {
-// 	// 		locs.push(stitchList[i].position);
-// 	// 	}
-// 	// 	return locs;
-// 	// }
-
-// 	update() {
-// 		var positions = this.geometry.getAttribute("position");
-// 		// console.log(positions);
-// 		for ( var i = 0; i < this.stitches.length; i ++ ) {
-// 			var pos = this.stitches[i].position;
-// 		    positions.array[i * 3] = pos.x;
-// 		    positions.array[(i * 3)+1] = pos.y;
-// 		    positions.array[(i * 3)+2] = pos.z;
-// 		}
-// 		// var newPositions = this.getStitchLocs(this.stitches);
-// 		// var curve = new THREE.CatmullRomCurve3(newPositions);
-// 		// var points = curve.getPoints( sheetWidth * 4 );
-// 		// this.geometry.attributes.position.array = points;
-// 		this.geometry.setAttribute( 'position', positions );
-// 		this.geometry.attributes.position.needsUpdate = true;
-// 	}
-// }
-
 class Noodle extends THREE.Mesh {
 	constructor(sheet, stitches, color) {
 		var locs = [];
