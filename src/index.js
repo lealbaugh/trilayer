@@ -99,7 +99,7 @@ function initText() {
 	instructions.id = "instructions";
 	instructions.setAttribute("style", 'position: absolute; top: 1em; left: 1em; color: white; font-family: "Helvetica Neue", Helvetica, sans-serif; font-weight: bold;');
 	document.body.appendChild( instructions );
-	instructions.innerHTML = "click to select<br>shift-click to rectangle-select<br>'d' to deselect all<br>left/right arrows to move selected stitches";
+	instructions.innerHTML = "click to select<br>shift-click to rectangle-select<br>'d' to deselect all<br>left/right arrows to move selected stitches<br>'k' to generate and download a knitout file";
 }
 
 function keyPress( e ) {
@@ -122,7 +122,7 @@ function keyPress( e ) {
 		});
 		selected.clear();
 	}
-	if (e.code == "KeyZ") {
+	if (e.code == "KeyK") {
 		var blob = new Blob([planner(zipStitches(sheets))], {type: "text/plain;charset=utf-8"});
 		saveAs(blob, "trilayer.k");
 	}
