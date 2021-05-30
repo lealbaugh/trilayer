@@ -13,7 +13,8 @@ var yarnWidth = stitchSize;
 var sheetWidth = 20;
 var sheetHeight = 15;
 var sheetColors = ["#00ffff", "#ffff00", "#ff00ff"];
-var backgrounds = [new THREE.Color(sheetColors[0]).offsetHSL(0,-0.5,-0.1), new THREE.Color(sheetColors[sheetColors.length-1]).offsetHSL(0,-0.5,-0.1)]
+// var backgrounds = [new THREE.Color(sheetColors[0]).offsetHSL(0,-0.5,-0.1), new THREE.Color(sheetColors[sheetColors.length-1]).offsetHSL(0,-0.5,-0.1)]
+var backgrounds = [new THREE.Color(sheetColors[0]).offsetHSL(0,-0.6,0.2), new THREE.Color(sheetColors[sheetColors.length-1]).offsetHSL(0,-0.6,0.2)]
 
 var scene, renderer, camera, cubes, geom, raycaster, mouse, intersects, controls;
 var sheets = [];
@@ -116,6 +117,9 @@ function keyPress(e) {
 			obj.unselect();
 		});
 	}
+	if (e.code == "KeyZ") {
+		console.log(zipStitches(sheets)[0]);
+	}
 }
 
 function onMouseMove( e ) {
@@ -215,6 +219,23 @@ function animate() {
 	camera.getWorldDirection(facing);
 	if (facing.z<0) scene.background = backgrounds[0];
 	else scene.background = backgrounds[1];
+}
+
+function zipStitches(sheets) {
+	var zippedStitches = []
+	for (var h=0; h<sheetHeight; h++) {
+		var rowGroup = [];
+		for (var w=0; w<sheetWidth; w++) {
+			var stitchOrder = [];
+			sheets.forEach(function (thisSheet) {
+				var sheetStitch = thisSheet.stitches[h][w];
+				stitchOrder[sheetStitch.layerPosition] = thisSheet.startPos; // put the "name"(canonical number / startPos) of the sheet at the position that that stitch is currently at
+			});
+			rowGroup.push(stitchOrder);
+		}
+		zippedStitches.push(rowGroup);
+	}
+	return zippedStitches;
 }
 
 
@@ -329,7 +350,7 @@ class Noodle extends THREE.Mesh {
 
 
 class Sheet extends THREE.Group {
-	constructor(height, width, color, startPos) {
+	constructor(width, height, color, startPos) {
 		super();
 		this.height = height;
 		this.width = width;
