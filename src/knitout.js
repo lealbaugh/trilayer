@@ -1,0 +1,469 @@
+"use strict";
+
+// basic writer
+var Writer = function(opts){
+	//public data:
+	this.carriers = {}; //names of all currently active carriers
+	this.needles = {}; //names of all currently-holding-loops needles
+	this.racking = 0; //current racking value
+
+	//private data:
+	this._carriers = []; //array of carrier names, front-to-back order
+	this._operations = []; //array of operations, stored as strings
+	this._headers = []; //array of headers. stored as strings
+
+
+	//fill '_carriers' array from opts.carriers:
+	if (typeof(opts) === 'undefined' || !('carriers' in opts)) {
+		console.warn("WARNING: options object passed to knitout.Writer does not contain a 'carriers' member. Will assume a default carrier layout (a single carrier named \"A\")");
+		this._carriers = ["A"];
+	} else {
+		if (!Array.isArray(opts.carriers)) throw new Error("opts.carriers should be an array of carrier names");
+		opts.carriers.forEach((name) => {
+			if (!(typeof(name) === 'string' && name.indexOf(' ') === -1)) {
+				throw new Error("Carrier names must be strings that do not contain the space character (' ').");
+			}
+		});
+		this._carriers = opts.carriers.slice();
+	}
+	//build a 'carriers' header from the '_carriers' list:
+	this._headers.push(";;Carriers: " + this._carriers.join(" "));
+};
+
+// function that queues header information to header list
+Writer.prototype.addHeader = function(name, value) {
+	if (name === undefined || value === undefined) {
+		throw new Error("Writer.addHeader should be called with a name and a value");
+	}
+
+	if (!(typeof(name) === 'string' && name.indexOf(': ') === -1)) {
+		throw new Error("Header names must be strings that don't contain the sequence ': '");
+	}
+	if (!(typeof(value) === 'string' && value.indexOf('\n') === -1)) {
+		throw new Error("Header values must be strings that do not contain the LF character ('\\n').");
+	}
+
+	//Check for valid headers:
+	if (name === "Carriers") {
+		throw new Error("Writer.addHeader can't set Carriers header (use the 'carriers' option when creating the writer instead).");
+	} else if (name === "Machine") {
+		//no restrictions on value
+	} else if (name === "Gauge") {
+		//TODO: warn if value is not a string representing a number
+	} else if (name === "Position") {
+		//TODO: commit to a list of values, possibly warn on non-standard value
+	} else if (name.startsWith("Yarn-")) {
+		//check for valid carrier name, warn otherwise
+		let carrierName = name.substr(5);
+		if (this._carriers.indexOf(carrierName) === -1) {
+			console.warn("Warning: header '" + name + "' mentions a carrier that isn't in the carriers list.");
+		}
+	} else if (name.startsWith('X-')) {
+		//all extension header values are okay!
+	} else {
+		console.warn("Warning: header name '" + name + "' not recognized; header will still be written.");
+	}
+	this._headers.push(';;' + name + ': ' + value);
+};
+
+// escape hatch to dump your custom instruction to knitout
+// if you know what you are doing
+Writer.prototype.addRawOperation = function( operation ){
+	console.warn("Warning: operation added to list as is(string), no error checking performed.");
+	this._operations.push(operation);
+};
+
+//helpers to extract parameters from argument arrays:
+// (these remove the extracted arguments from the start of the array and throw on errors)
+
+//shiftDirection interprets the first element of 'args' as a direction, and throws on error:
+// returns '+' or '-'.
+function shiftDirection(args) {
+	console.assert(Array.isArray(args));
+	if (args.length === 0) {
+		throw new Error("Direction missing.");
+	}
+	if (!(args[0] === '+' || args[0] === '-')) {
+		throw new Error("Direction should be '+' or '-'.");
+	}
+	let dir = args.shift();
+	return dir;
+}
+
+//shiftBedNeedle interprets the first one or two arguments of 'args' as a bed+needle number, and throws on error:
+// returns a {bed:, needle:} object.
+
+const BedNeedleRegex = /^([fb]s?)(-?\d+)$/;
+const BedRegex = /^[fb]s?$/;
+function shiftBedNeedle(args) {
+	console.assert(Array.isArray(args));
+	if (args.length === 0) {
+		throw new Error("Needle missing.");
+	}
+	let bed, needle;
+	//case: bed string, needle number:
+	if (typeof(args[0]) === 'string' && BedRegex.test(args[0])) {
+		if (args.length < 2 || !Number.isInteger(args[1])) {
+			throw new Error("Expecting bed name to be followed by a needle number.");
+		}
+		bed = args.shift();
+		needle = args.shift();
+	//case: single string "f12", "b-2", "bs66":
+	} else if (typeof(args[0]) === 'string') {
+		let m = args[0].match(BedNeedleRegex);
+		if (m === null) {
+			throw new Error("String '" + args[0] + "' does not look like a compound bed+needle string.");
+		}
+		bed = m[1];
+		needle = parseInt(m[2]);
+		args.shift();
+	//case: two-member array ["fs", 2]
+	} else if (Array.isArray(args[0])) {
+		if (!( args[0].length === 2 && typeof(args[0][0]) === 'string' && BedRegex.test(args[0][0]) && Number.isInteger(args[0][1]) )) {
+			throw new Error("Bed+needle array should look like [\"f\", 12].");
+		}
+		bed = args[0][0];
+		needle = args[0][1];
+		args.shift();
+	//case: object {bed:"fs", needle:5}
+	} else if (typeof(args[0]) === 'object') {
+		if (!( 'bed' in args[0] && typeof(args[0].bed) === 'string' && BedRegex.test(args[0].bed) )) {
+			throw new Error("Bed+needle object should have a 'bed' member string naming the bed.");
+		}
+		if (!( 'needle' in args[0] && Number.isInteger(args[0].needle) )) {
+			throw new Error("Bed+needle object should have a 'needle' member integer.");
+		}
+		bed = args[0].bed;
+		needle = args[0].needle;
+		args.shift();
+	} else {
+		throw new Error("Expecting bed+needle as name+number (\"fs\", 6), string (\"b-2\"), array ([\"f\", 6]), or object ({bed:\"bs\", needle:12}). Got '" + JSON.stringify(args) + "'");
+	}
+	return {bed:bed, needle:needle};
+}
+
+//shiftCarrierSet interprets the remaining contents of 'args' as an array of carrier names, and throws on error:
+// returns an array of carrier names, e.g., ["C", "A"].
+function shiftCarrierSet(args, carrierNames) {
+	let carrierSet = [];
+	//carrier set as array, e.g., knit(..., ["A", "B"]):
+	if (args.length === 1 && Array.isArray(args[0])) {
+		carrierSet = args.shift().slice();
+	} else {
+		//carrier set as parameters, e.g., knit(..., "A", "B");
+		carrierSet = args.splice(0,args.length).slice();
+	}
+
+	// slightly ugly handling of various ways of typeing "A B", "A, B"
+	carrierSet.forEach(function(name, idx){
+		let space_split = name.split(" ");
+		let first = true;
+		space_split.forEach(function(s, sidx){
+			if(s == '') return;
+			if(first){
+				carrierSet[idx] = s;
+				first = false;
+			}
+			else carrierSet.push(s);
+		});
+	});
+
+	carrierSet.forEach(function(name, idx){
+		let comma_split = name.split(",");
+		let first = true;
+		comma_split.forEach(function(s, sidx){
+			if(s =='') return;
+			if(first) {
+				carrierSet[idx] = s;
+				first = false;
+			}
+			else carrierSet.push(s);
+		});
+
+	});
+
+
+	carrierSet.forEach(function(name){
+		if (carrierNames.indexOf(name) === -1) {
+			throw new Error("Invalid carrier name '" + name + "'");
+		}
+	});
+
+	return carrierSet;
+}
+
+Writer.prototype.in = function(...args){
+
+	let cs = shiftCarrierSet(args, this._carriers);
+	if (cs.length === 0) {
+		throw new Error("It doesn't make sense to 'in' on an empty carrier set.");
+	}
+	cs.forEach(function(cn){
+		if (cn in this.carriers) {
+			throw new Error("Carrier '" + cn + "' is already in.");
+		}
+		this.carriers[cn] = {hook:false};
+	}, this);
+
+	this._operations.push('in ' + cs.join(' '));
+
+};
+
+Writer.prototype.inhook = function(...args){
+	
+	let cs = shiftCarrierSet(args, this._carriers);
+	if (cs.length === 0) {
+		throw new Error("It doesn't make sense to 'inhook' on an empty carrier set.");
+	}
+	cs.forEach(function(cn){
+		if (cn in this.carriers) {
+			throw new Error("Carrier '" + cn + "' is already in.");
+		}
+		this.carriers[cn] = {hook:true};
+	}, this);
+
+	this._operations.push('inhook ' + cs.join(' '));
+
+};
+
+
+Writer.prototype.releasehook = function(...args){
+
+	let cs = shiftCarrierSet(args, this._carriers);
+	if (cs.length === 0) {
+		throw new Error("It doesn't make sense to 'releasehook' on an empty carrier set.");
+	}
+	cs.forEach(function(cn){
+		if (!(cn in this.carriers)) {
+			throw new Error("Carrier '" + cn + "' isn't in.");
+		}
+		if (!this.carriers[cn].hook) {
+			throw new Error("Carrier '" + cn + "' isn't in the hook.");
+		}
+		this.carriers[cn].hook = false;
+	}, this);
+
+	this._operations.push('releasehook ' + cs.join(' '));
+
+};
+
+Writer.prototype.out = function(...args){
+
+	let cs = shiftCarrierSet(args, this._carriers);
+	if (cs.length === 0) {
+		throw new Error("It doesn't make sense to 'out' on an empty carrier set.");
+	}
+	cs.forEach(function(cn){
+		if (!(cn in this.carriers)) {
+			throw new Error("Carrier '" + cn + "' isn't in.");
+		}
+		delete this.carriers[cn];
+	}, this);
+
+	this._operations.push('out ' + cs.join(' '));
+
+};
+
+Writer.prototype.outhook = function(...args){
+
+	let cs = shiftCarrierSet(args, this._carriers);
+	if (cs.length === 0) {
+		throw new Error("It doesn't make sense to 'outhook' on an empty carrier set.");
+	}
+	cs.forEach(function(cn){
+		if (!(cn in this.carriers)) {
+			throw new Error("Carrier '" + cn + "' isn't in.");
+		}
+		delete this.carriers[cn];
+	}, this);
+
+	this._operations.push('outhook ' + cs.join(' '));
+};
+
+function isFiniteNumber( n ) {
+	if (typeof(n) === 'number' && Number.isFinite(n) && !Number.isNaN(n)) return true;
+	return false;
+}
+
+Writer.prototype.stitch = function(before, after) {
+	if (!(isFiniteNumber(before) && isFiniteNumber(after))) {
+		throw new Error("Stitch L and T values must be finite numbers.");
+	}
+
+	this._operations.push('stitch ' + before.toString() + ' ' + after.toString());
+};
+
+//note: extension!
+Writer.prototype.stitchNumber = function (stitchNumber) {
+	if (!(Number.isInteger(stitchNumber) && stitchNumber > 0)) {
+		throw new Error("Stitch numbers are positive integer values.");
+	}
+
+	this._operations.push('x-stitch-number ' + stitchNumber.toString());
+};
+
+Writer.prototype.fabricPresser = function (presserMode){
+	
+	if(presserMode === 'auto'){
+		this._operations.push('x-presser-mode auto');
+	}
+	else if(presserMode === 'on'){
+		this._operations.push('x-presser-mode on');
+	}
+	else if(presserMode === 'off'){
+		this._operations.push('x-presser-mode off');
+	}
+	else{
+		console.warn('Ignoring presser mode extension, unknown mode ' + presserMode + '. Valid modes: on, off, auto');
+	}
+}
+
+
+Writer.prototype.rack = function(rack) {
+
+	if (!(isFiniteNumber(rack))) {
+		throw new Error("Racking values must be finite numbers.");
+	}
+
+	this.racking = rack;
+
+	this._operations.push('rack ' + rack.toString());
+};
+
+Writer.prototype.knit = function(...args) {
+	let dir = shiftDirection(args);
+	let bn = shiftBedNeedle(args);
+	let cs = shiftCarrierSet(args, this._carriers);
+
+	if (cs.length > 0) {
+		this.needles[bn.bed + bn.needle.toString()] = true;
+	} else {
+		delete this.needles[bn.bed + bn.needle.toString()];
+	}
+	
+	this._operations.push('knit ' + dir + ' ' + bn.bed + bn.needle.toString() + ' ' + cs.join(' '));
+};
+
+Writer.prototype.tuck  = function(...args) {
+	let dir = shiftDirection(args);
+	let bn = shiftBedNeedle(args);
+	let cs = shiftCarrierSet(args, this._carriers);
+
+	this.needles[bn.bed + bn.needle.toString()] = true;
+	
+	this._operations.push('tuck ' + dir + ' ' + bn.bed + bn.needle.toString() + ' ' + cs.join(' '));
+};
+
+Writer.prototype.split = function(...args) {
+	let dir = shiftDirection(args);
+	let from = shiftBedNeedle(args);
+	let to = shiftBedNeedle(args);
+	let cs = shiftCarrierSet(args, this._carriers);
+
+	if ((from.bed + from.needle.toString()) in this.needles) {
+		this.needles[to.bed + to.needle.toString()] = true;
+		delete this.needles[from.bed + from.needle.toString()];
+	}
+	if (cs.length > 0) {
+		this.needles[from.bed + from.needle.toString()] = true;
+	}
+
+	this._operations.push('split ' + dir + ' ' + from.bed + from.needle.toString() + ' ' + to.bed + to.needle.toString() + ' ' + cs.join(' '));
+};
+
+Writer.prototype.miss = function(...args) {
+	let dir = shiftDirection(args);
+	let bn = shiftBedNeedle(args);
+	let cs = shiftCarrierSet(args, this._carriers);
+
+	if (cs.length === 0) {
+		throw new Error("It doesn't make sense to miss with no carriers.");
+	}
+	
+	this._operations.push('miss ' + dir + ' ' + bn.bed + bn.needle.toString() + ' ' + cs.join(' '));
+};
+
+
+// drop -> knit without yarn, but supported in knitout
+Writer.prototype.drop = function(...args) {
+	let bn = shiftBedNeedle(args);
+
+	if (args.length !== 0) {
+		throw new Error("drop only takes a bed+needle");
+	}
+
+	delete this.needles[bn.bed + bn.needle.toString()];
+	
+	this._operations.push('drop ' + bn.bed + bn.needle.toString());
+};
+
+// amiss -> tuck without yarn, but supported in knitout
+Writer.prototype.amiss = function(...args) {
+	let bn = shiftBedNeedle(args);
+
+	if (args.length !== 0) {
+		throw new Error("amiss only takes a bed+needle");
+	}
+
+	this._operations.push('amiss ' + bn.bed + bn.needle.toString());
+};
+
+// xfer -> split without yarn, but supported in knitout
+Writer.prototype.xfer = function(...args) {
+
+	let from = shiftBedNeedle(args);
+	let to = shiftBedNeedle(args);
+
+	if (args.length !== 0) {
+		throw new Error("xfer only takes two bed+needles");
+	}
+
+	if ((from.bed + from.needle.toString()) in this.needles) {
+		this.needles[to.bed + to.needle.toString()] = true;
+		delete this.needles[from.bed + from.needle.toString()];
+	}
+	
+	this._operations.push('xfer ' + from.bed + from.needle.toString() + ' ' + to.bed + to.needle.toString());
+};
+
+// add comments to knitout 
+Writer.prototype.comment = function( str ){
+
+	let multi = str.split('\n');
+	multi.forEach(function(entry){
+		// cannot add header comments with comment
+		while(entry.startsWith(';')){
+			console.warn('Warning: comment starts with ; use addHeader for adding header comments.');
+			entry = entry.substr(1, entry.length);
+		}
+		this._operations.push(';' + entry.toString());
+	}, this);
+};
+
+Writer.prototype.pause = function(comment){
+	// deals with multi-line comments
+	this.comment(comment);
+	this._operations.push('pause');
+};
+
+Writer.prototype.write = function(filename){
+	let version = ';!knitout-2';
+	let content = version + '\n' +
+		this._headers.join('\n') + '\n' + 
+		this._operations.join('\n') + '\n';
+	// try{
+	// 	let fs = require('fs');
+	// 	fs.writeFileSync(filename, content); //default is utf8 
+	// } 
+	// catch(e){
+	// 	console.warn("Can't load 'fs'. Did not write file.");
+	// }
+	return content; 
+};
+
+// browser-compatibility
+if(typeof(module) !== 'undefined'){
+	module.exports.Writer = Writer;
+}
+
+
