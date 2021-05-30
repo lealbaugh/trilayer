@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-// import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { MeshLine, MeshLineMaterial, MeshLineRaycast } from 'three.meshline';
+
+import { planner } from './knitPlanner';
+
 
 var perspective = false;
 var orbit = true;
@@ -57,7 +59,7 @@ window.onload = function() {
 	// ...and point the camera at 'em
 	// camera.position.set( 400, 25, 40 );
 	camera.position.set( -150, 100, -150 );
-	console.log(sheets[0].getCenter().position);
+	// console.log(sheets[0].getCenter().position);
 	// camera.lookAt( new THREE.Vector3( sheets[0].getCenter().position ) );
 	// camera.lookAt( sheets[0].getCenter().position );
 	// camera.lookAt()
@@ -98,7 +100,7 @@ function initText() {
 	instructions.innerHTML = "click to select<br>shift-click to rectangle-select<br>'d' to deselect all<br>left/right arrows to move selected stitches";
 }
 
-function keyPress(e) {
+function keyPress( e ) {
 	if (e.code == "ArrowRight" || e.code == "ArrowLeft") {
 		if (selected.size>0) {
 			var dir = 0;
@@ -116,9 +118,10 @@ function keyPress(e) {
 		selected.forEach(function (obj) {
 			obj.unselect();
 		});
+		selected.clear();
 	}
 	if (e.code == "KeyZ") {
-		console.log(zipStitches(sheets)[0]);
+		console.log(planner([zipStitches(sheets)[0]]));
 	}
 }
 
@@ -277,7 +280,7 @@ class Stitch extends THREE.Mesh {
 		var newPos = this.layerPosition + dir;
 		if (newPos>=0 && newPos<numberOfSheets) {
 			var oldPos = this.layerPosition;
-			console.log(newPos);
+			// console.log(newPos);
 			this.moveToPos(newPos);
 			this.sisters.forEach(function (sis) {
 				if (sis.layerPosition == newPos) sis.moveToPos(oldPos);

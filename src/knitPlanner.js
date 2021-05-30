@@ -1,158 +1,170 @@
-// ==============================================================================
-// ============================ Boilerplate =====================================
-// ==============================================================================
-
-var knitout = require('../../knitout-frontend-js/knitout');
-k = new knitout.Writer({carriers:["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]});
-k.addHeader('Machine','SWGXYZ');
-k.addHeader('Gauge','15');
-k.addHeader('X-Presser-Mode','auto');
-k.addHeader('Position','Center');
-
-// ==============================================================================
-// ============================= Main action ====================================
-// ==============================================================================
+// var knitout = require('./knitout');
+import { Writer } from './knitout';
 var color1 = "3";
 var color2 = "4";
 var color3 = "5";
 
 var carriers = [color1, color2, color3];
-// var stripeWidth = 6;
-// var numberOfStripeSets = 1;
-// var	height = 6;
-// var numberOfStripes = numberOfStripeSets*carriers.length;
-
 var alignment = 0;
+var carriersInAction = {};
+var hookInAction = false;
+var k;
 
-// for (var i=0; i<numberOfStripes; i++) {
-for (var i=numberOfStripes-1; i>=0; i--) {
-	// var confines = {rightedge: (numberOfStripes-i)*stripeWidth, leftedge: (numberOfStripes-(i+1))*stripeWidth +1};
-	var confines = {leftedge: i*stripeWidth, rightedge: (i+1)*stripeWidth - 1};
-	var orderedCarriers = rotate(carriers, i);
-	// console.log(confines);
-	for (var c=0; c<orderedCarriers.length; c++) {
-		var carrier = orderedCarriers[c];
-		if (i==numberOfStripes-1) yarnIn(carrier);
-		caston(confines, carrier);
-		if (i==numberOfStripes-1) releaseHook(carrier);
-		for (var s=confines.rightedge; s>=confines.leftedge; s--) {
-			knit("-", "f", s, carrier);
-		}
-		miss("-", "f", confines.leftedge-1, carrier);
-	}
-	if (i>0){
-		for (var c=0; c<orderedCarriers.length; c++) {
-			miss("+", "f", confines.leftedge, orderedCarriers[c]);
-		}
-	}
-}
 
-for (var h=0; h<height; h++) {
-	// for (var i=numberOfStripes-1; i>=0; i--) {
-	for (var i=0; i<numberOfStripes; i++) {
-	// go rightward, one stripe at a time
-		var confines = {leftedge: i*stripeWidth, rightedge: (i+1)*stripeWidth - 1};
-		var orderedCarriers = rotate(carriers, i);
-		for (var c=orderedCarriers.length-1; c>=0; c--) {
-			// knit each layer, and, if it's not the "bottom" one, transfer it out of the way
-			var carrier = orderedCarriers[c];
-			for (var s=confines.leftedge; s<=confines.rightedge; s++) {
-				knit("+", "f", s, carrier);
-			}
-			miss("+", "f", confines.rightedge+1, carrier);
-			if (c>0) {
-				for (var s=confines.leftedge; s<=confines.rightedge; s++) {
-					xfer(carrier, "f", s, "b", s);
-				}
-			}
-		}
-		if (i<numberOfStripes-1){
-			for (var c=0; c<orderedCarriers.length; c++) {
-				miss("-", "f", confines.rightedge, orderedCarriers[c]);
-			}
-		}
+export const planner = function (chart) {
+	k = new Writer({carriers:["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]});
+	k.addHeader('Machine','SWGXYZ');
+	k.addHeader('Gauge','15');
+	k.addHeader('X-Presser-Mode','auto');
+	k.addHeader('Position','Center');
+
+	// do the main thing
+	trilayerSwatch(chart);
+
+	// yarns out, and drop
+	for (var c = 0; c<carriers.length; c++) {
+		yarnOut(carriers[c]);
 	}
-	
-	// go leftward, same deal
-	if (h<height-1) { // (don't go leftward the last time, let's keep the carriers gripper-side for removal)
-		for (var i=numberOfStripes-1; i>=0; i--) {
-			var confines = {leftedge: i*stripeWidth, rightedge: (i+1)*stripeWidth - 1};
-			var orderedCarriers = rotate(carriers, i);
-			for (var c=0; c<orderedCarriers.length; c++) {
-				var carrier = orderedCarriers[c];
-				if (c>0) {
-					for (var s=confines.leftedge; s<=confines.rightedge; s++) {
-						xfer(carrier, "b", s, "f", s);
+	dropAll({leftedge: -4, rightedge: ((chart[0].length)*chart[0][0].length)+4});
+
+	// ship it
+	return k.write('tricolor.k');
+};
+
+
+// ==============================================================================
+// ============================= Main action ====================================
+// ==============================================================================
+function trilayerSwatch(stitchChart) {
+	for (var h=0; h<stitchChart.length; h++) {
+		console.log("row", h);
+		var row = chunkify(stitchChart[h]);
+		// console.log()
+		var direction = (h%2==0) ? "-" : "+";
+
+		if (h==0) { //caston -- build stack from the bottom to the top; might need to bring in some yarns; don't need to xfer
+			for (var c=row.length-1; c>=0; c--) {
+				var chunk = row[c];
+				for (var layer=0; layer<chunk.stackOrder.length; layer++) {
+					var carrier = carriers[chunk.stackOrder[layer]];
+
+					//caston
+					if (h==0) {
+						if (!carriersInAction[carrier]) {
+							yarnIn(carrier);
+						}
+						for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
+							if (s%2 == chunk.rightedge%2) {
+								knit("-", "f", s, carrier);
+							}
+						}
+						for (var s=chunk.leftedge; s<=chunk.rightedge; s++) {
+							if (s%2 != chunk.rightedge%2) {
+								knit("+", "f", s, carrier);
+							}
+						} 
+						if (hookInAction) releaseHook(carrier);
+					}
+
+					// and finish to the left
+					for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
+						knit("-", "f", s, carrier);
+					}
+					// if you have more layers to knit, kick left a bit to get out of the way
+					if (layer<chunk.stackOrder.length-1) { 
+						miss("-", "f", chunk.leftedge-1, carrier);
 					}
 				}
-				for (var s=confines.rightedge; s>=confines.leftedge; s--) {
-					knit("-", "f", s, carrier);
-				}
-				miss("-", "f", confines.leftedge-1, carrier);
-			}
-			if (i>0){
-				for (var c=0; c<orderedCarriers.length; c++) {
-					miss("+", "f", confines.leftedge, orderedCarriers[c]);
+				// once all the layers are done, if you have more chunks, kick all carriers rightward to get ready for them
+				if (c>0) {
+					for (var carrierNumber=0; carrierNumber<carriers.length; carrierNumber++) {
+						miss("+", "f", chunk.leftedge, carriers[carrierNumber]);
+					}
 				}
 			}
+		}
+		else if (direction == "-") { // typical leftward row: build the stack from the bottom to the top
+			for (var c=row.length-1; c>=0; c--) {
+				var chunk = row[c];
+				for (var layer=0; layer<chunk.stackOrder.length; layer++) {
+					var carrier = carriers[chunk.stackOrder[layer]];
+
+					// if it's not the bottommost layer, transfer it to the front to get ready
+					if (layer>0) {
+						for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
+							xfer(carrier, "b", s, "f", s);
+						}
+					}
+
+					for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
+						knit("-", "f", s, carrier);
+					}
+
+					// if it's not the last layer in the chunk, kick a bit left to get out of the way
+					if (layer<chunk.stackOrder.length-1) {
+						miss("-", "f", chunk.leftedge-1, carrier);
+					}
+
+				}
+				if (c>0) {
+					for (var carrierNumber=0; carrierNumber<carriers.length; carrierNumber++) {
+						miss("+", "f", chunk.leftedge, carriers[carrierNumber]);
+					}
+				}
+			}
+		}
+
+		else if (direction == "+") { // typical rightward row: build the stack from the top to the bottom
+			for (var c=0; c<row.length; c++) {
+				var chunk = row[c];
+				for (var layer=chunk.stackOrder.length-1; layer>=0; layer--) {
+					var carrier = carriers[chunk.stackOrder[layer]];
+					for (var s=chunk.leftedge; s<=chunk.rightedge; s++) {
+						knit("+", "f", s, carrier);
+					}
+
+					// if it's not the bottommost layer, kick the carrier and transfer it to get it out of the way of the next one
+					if (layer>0) {
+						miss("+", "f", chunk.rightedge+1, carrier);
+						for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
+							xfer(carrier, "f", s, "b", s);
+						}
+					}
+				}
+				if (c<row.length-1) {
+					for (var carrierNumber=0; carrierNumber<carriers.length; carrierNumber++) {
+						miss("-", "f", chunk.rightedge, carriers[carrierNumber]);
+					}
+				}
+			}
+		}
+	}
+}
+
+
+
+function chunkify(chartRow) {
+	function arrEquals(arr1, arr2) {
+		var i = arr1.length;
+		while (i--) {
+			if (arr1[i] !== arr2[i]) return false;
+		}
+		return true;
+	}
+	var chunks = [];
+	var newChunk = {leftedge:0, rightedge:undefined, stackOrder:chartRow[0]};
+	for (var i=1; i<chartRow.length; i++) {
+		if (!arrEquals(chartRow[i], chartRow[i-1])) {
+			newChunk.rightedge = i-1;
+			chunks.push(Object.assign({}, newChunk));
+			newChunk = {leftedge:i, rightedge:undefined, stackOrder:chartRow[i]};
 		}	
 	}
+	newChunk.rightedge = chartRow.length-1;
+	chunks.push(Object.assign({}, newChunk));
+	return chunks;
 }
 
-// yarns out, and drop
-for (var c = 0; c<carriers.length; c++) {
-	yarnOut(carriers[c]);
-}
-dropAll({leftedge: -4, rightedge: numberOfStripes*stripeWidth*3});
-
-
-// ship it
-k.write('tricolor.k');
-
-// // ================================================================= 
-// // ========================= ~ Helpers ~ =========================== 
-// // ================================================================= 
-
-// https://stackoverflow.com/questions/1985260/rotate-the-elements-in-an-array-in-javascript
-function rotate(input, n) {
-	output = input.slice(0);
-	n -= output.length * Math.floor(n / output.length);
-	output.push.apply(output, output.splice(0, n));
-	return output;
-}
-
-
-function caston (confines, carrier) {
-	for (var s=confines.rightedge; s>=confines.leftedge; s--) {
-		if (s%2 == confines.rightedge%2) {
-			knit("-", "f", s, carrier);
-		}
-	} 
-	for (var s=confines.leftedge; s<=confines.rightedge; s++) {
-		if (s%2 != confines.rightedge%2) {
-			knit("+", "f", s, carrier);
-		}
-	} 
-}
-
-function makeTag (s, carrier) {
-	knit("+", "f", s, carrier);
-	knit("-", "f", s, carrier);
-	knit("+", "f", s, carrier);
-	knit("-", "f", s+1, carrier);
-	knit("-", "f", s, carrier);
-	knit("+", "f", s, carrier);
-	knit("+", "f", s+1, carrier);
-	for (var i=0; i<3; i++) {
-		knit("-", "f", s+2, carrier);
-		knit("-", "f", s+1, carrier);
-		knit("-", "f", s, carrier);
-		knit("+", "f", s, carrier);
-		knit("+", "f", s+1, carrier);
-		knit("+", "f", s+2, carrier);
-	}
-	return {leftedge: s, rightedge: s+2};
-}
 
 function dropAll (confines) {
 	for (var s=confines.rightedge; s>=confines.leftedge; s--) {
@@ -167,7 +179,7 @@ function dropAll (confines) {
 // // ======================= ~ Low-level ~ =========================== 
 // // ================================================================= 
 
-
+// funky mapNeedle specifically for this trilayer context
 function mapNeedle (yarn, bed, needle) {
 	var mappedNeedle = 3*needle;
 	if (yarn == color2) {
@@ -180,9 +192,7 @@ function mapNeedle (yarn, bed, needle) {
 }
 
 function knit (direction, bed, needle, carrier) {
-	// console.log("knitting with", carrier);
 	var mappedNeedle = mapNeedle(carrier, bed, needle);
-	// console.log(mappedNeedle.needle);
 	k.knit(direction, mappedNeedle.bed + mappedNeedle.needle, carrier);
 }
 
@@ -208,10 +218,6 @@ function amiss (carrier, bed, needle) {
 }
 
 function split (direction, fromBed, fromNeedle, toBed, toNeedle, carrier) {
-	// console.log("knitting with", carrier);
-
-	// duplicates the rack logic from xfer
-
 	if (fromBed == toBed || (fromBed == "f" && toBed == "fs")|| (fromBed == "fs" && toBed == "f")|| (fromBed == "b" && toBed == "bs")|| (fromBed == "bs" && toBed == "b")) {
 		console.log("cannot split to same bed! (you'll need to split there, then xfer back) attempted: ", fromBed, fromNeedle, toBed, toNeedle);
 	}
@@ -228,24 +234,18 @@ function split (direction, fromBed, fromNeedle, toBed, toNeedle, carrier) {
 
 function yarnIn (carrier) {
 	k.inhook(carrier);
-	// if (!carriers[carrier]) carriers[carrier] = {};
-	// carriers[carrier].in = true;
-	// carriers["hook"] = true;
-	// console.log("yarn in: ", carrier, carriers);
+	carriersInAction[carrier] = true;
+	hookInAction = true;
 }
 
 function releaseHook (carrier) {
 	k.releasehook(carrier);
-	// carriers["hook"] = false;
-	// console.log("releaseHook");
-	// if (carriers["hook"]) {
-	// }
+	hookInAction = false;
 }
 
 function yarnOut (carrier) {
-	// console.log("yarn out: ", carrier, carriers);
 	k.outhook(carrier);
-	// carriers[carrier].in = false;
+	carriersInAction[carrier] = false;
 }
 
 function xfer (carrier, fromBed, fromNeedle, toBed, toNeedle) {
