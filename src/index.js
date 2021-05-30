@@ -3,6 +3,8 @@ import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { MeshLine, MeshLineMaterial, MeshLineRaycast } from 'three.meshline';
 
+// https://github.com/eligrey/FileSaver.js
+import { saveAs } from 'file-saver';
 import { planner } from './knitPlanner';
 
 
@@ -121,7 +123,8 @@ function keyPress( e ) {
 		selected.clear();
 	}
 	if (e.code == "KeyZ") {
-		console.log(planner([zipStitches(sheets)[0]]));
+		var blob = new Blob([planner(zipStitches(sheets))], {type: "text/plain;charset=utf-8"});
+		saveAs(blob, "trilayer.k");
 	}
 }
 

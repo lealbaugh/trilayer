@@ -37,9 +37,7 @@ export const planner = function (chart) {
 // ==============================================================================
 function trilayerSwatch(stitchChart) {
 	for (var h=0; h<stitchChart.length; h++) {
-		console.log("row", h);
 		var row = chunkify(stitchChart[h]);
-		// console.log()
 		var direction = (h%2==0) ? "-" : "+";
 
 		if (h==0) { //caston -- build stack from the bottom to the top; might need to bring in some yarns; don't need to xfer
@@ -222,9 +220,9 @@ function split (direction, fromBed, fromNeedle, toBed, toNeedle, carrier) {
 		console.log("cannot split to same bed! (you'll need to split there, then xfer back) attempted: ", fromBed, fromNeedle, toBed, toNeedle);
 	}
 	else {
-		mappedFrom = mapNeedle(carrier, fromBed, fromNeedle);
-		mappedTo = mapNeedle(carrier, toBed, toNeedle);
-		offset = mappedTo.needle - mappedFrom.needle;
+		var mappedFrom = mapNeedle(carrier, fromBed, fromNeedle);
+		var mappedTo = mapNeedle(carrier, toBed, toNeedle);
+		var offset = mappedTo.needle - mappedFrom.needle;
 		if (fromBed == "f" || fromBed == "fs") offset = 0 - offset;
 		k.rack(offset);
 		k.split(direction, mappedFrom.bed+mappedFrom.needle, mappedTo.bed+mappedTo.needle, carrier);
@@ -253,9 +251,9 @@ function xfer (carrier, fromBed, fromNeedle, toBed, toNeedle) {
 		console.log("cannot xfer to same bed! attempted: ", fromBed, fromNeedle, toBed, toNeedle);
 	}
 	else {
-		mappedFrom = mapNeedle(carrier, fromBed, fromNeedle);
-		mappedTo = mapNeedle(carrier, toBed, toNeedle);
-		offset = mappedTo.needle - mappedFrom.needle;
+		var mappedFrom = mapNeedle(carrier, fromBed, fromNeedle);
+		var mappedTo = mapNeedle(carrier, toBed, toNeedle);
+		var offset = mappedTo.needle - mappedFrom.needle;
 		if (fromBed == "f" || fromBed == "fs") offset = 0 - offset;
 		if (offset!=alignment) k.rack(offset);
 		k.xfer(mappedFrom.bed+mappedFrom.needle, mappedTo.bed+mappedTo.needle);
