@@ -41,6 +41,7 @@ function trilayerSwatch(stitchChart) {
 		var direction = (h%2==0) ? "-" : "+";
 
 		if (h==0) { //caston -- build stack from the bottom to the top; might need to bring in some yarns; don't need to xfer
+			k.stitchNumber(92);
 			for (var c=row.length-1; c>=0; c--) {
 				var chunk = row[c];
 				for (var layer=0; layer<chunk.stackOrder.length; layer++) {
@@ -53,12 +54,12 @@ function trilayerSwatch(stitchChart) {
 						}
 						for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
 							if (s%2 == chunk.rightedge%2) {
-								knit("-", "f", s, carrier);
+								knit(layer, "-", "f", s, carrier);
 							}
 						}
 						for (var s=chunk.leftedge; s<=chunk.rightedge; s++) {
 							if (s%2 != chunk.rightedge%2) {
-								knit("+", "f", s, carrier);
+								knit(layer, "+", "f", s, carrier);
 							}
 						} 
 						if (hookInAction) releaseHook(carrier);
@@ -66,20 +67,21 @@ function trilayerSwatch(stitchChart) {
 
 					// and finish to the left
 					for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
-						knit("-", "f", s, carrier);
+						knit(layer, "-", "f", s, carrier);
 					}
 					// if you have more layers to knit, kick left a bit to get out of the way
 					if (layer<chunk.stackOrder.length-1) { 
-						miss("-", "f", chunk.leftedge-1, carrier);
+						miss(layer, "-", "f", chunk.leftedge-1, carrier);
 					}
 				}
 				// once all the layers are done, if you have more chunks, kick all carriers rightward to get ready for them
 				if (c>0) {
 					for (var carrierNumber=0; carrierNumber<carriers.length; carrierNumber++) {
-						miss("+", "f", chunk.leftedge, carriers[carrierNumber]);
+						miss(layer, "+", "f", chunk.leftedge, carriers[carrierNumber]);
 					}
 				}
 			}
+			k.stitchNumber(95);
 		}
 		else if (direction == "-") { // typical leftward row: build the stack from the bottom to the top
 			for (var c=row.length-1; c>=0; c--) {
@@ -90,23 +92,23 @@ function trilayerSwatch(stitchChart) {
 					// if it's not the bottommost layer, transfer it to the front to get ready
 					if (layer>0) {
 						for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
-							xfer(carrier, "b", s, "f", s);
+							xfer(layer, "b", s, layer, "f", s);
 						}
 					}
 
 					for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
-						knit("-", "f", s, carrier);
+						knit(layer, "-", "f", s, carrier);
 					}
 
 					// if it's not the last layer in the chunk, kick a bit left to get out of the way
 					if (layer<chunk.stackOrder.length-1) {
-						miss("-", "f", chunk.leftedge-1, carrier);
+						miss(layer, "-", "f", chunk.leftedge-1, carrier);
 					}
 
 				}
 				if (c>0) {
 					for (var carrierNumber=0; carrierNumber<carriers.length; carrierNumber++) {
-						miss("+", "f", chunk.leftedge, carriers[carrierNumber]);
+						miss(layer, "+", "f", chunk.leftedge, carriers[carrierNumber]);
 					}
 				}
 			}
@@ -118,20 +120,20 @@ function trilayerSwatch(stitchChart) {
 				for (var layer=chunk.stackOrder.length-1; layer>=0; layer--) {
 					var carrier = carriers[chunk.stackOrder[layer]];
 					for (var s=chunk.leftedge; s<=chunk.rightedge; s++) {
-						knit("+", "f", s, carrier);
+						knit(layer, "+", "f", s, carrier);
 					}
 
 					// if it's not the bottommost layer, kick the carrier and transfer it to get it out of the way of the next one
 					if (layer>0) {
-						miss("+", "f", chunk.rightedge+1, carrier);
+						miss(layer, "+", "f", chunk.rightedge+1, carrier);
 						for (var s=chunk.rightedge; s>=chunk.leftedge; s--) {
-							xfer(carrier, "f", s, "b", s);
+							xfer(layer, "f", s, layer, "b", s);
 						}
 					}
 				}
 				if (c<row.length-1) {
 					for (var carrierNumber=0; carrierNumber<carriers.length; carrierNumber++) {
-						miss("-", "f", chunk.rightedge, carriers[carrierNumber]);
+						miss(layer, "-", "f", chunk.rightedge, carriers[carrierNumber]);
 					}
 				}
 			}
@@ -178,50 +180,50 @@ function dropAll (confines) {
 // // ================================================================= 
 
 // funky mapNeedle specifically for this trilayer context
-function mapNeedle (yarn, bed, needle) {
-	var mappedNeedle = 3*needle;
-	if (yarn == color2) {
-		mappedNeedle += 1;
-	}
-	else if (yarn == color3) {
-		mappedNeedle += 2;
-	}
+function mapNeedle (layer, bed, needle) {
+	var mappedNeedle = 3*needle + layer;
+	// if (yarn == color2) {
+	// 	mappedNeedle += 1;
+	// }
+	// else if (yarn == color3) {
+	// 	mappedNeedle += 2;
+	// }
 	return {bed: bed, needle: mappedNeedle};
 }
 
-function knit (direction, bed, needle, carrier) {
-	var mappedNeedle = mapNeedle(carrier, bed, needle);
+function knit (layer, direction, bed, needle, carrier) {
+	var mappedNeedle = mapNeedle(layer, bed, needle);
 	k.knit(direction, mappedNeedle.bed + mappedNeedle.needle, carrier);
 }
 
 
-function miss (direction, bed, needle, carrier) {
-	var mappedNeedle = mapNeedle(carrier, bed, needle);
+function miss (layer, direction, bed, needle, carrier) {
+	var mappedNeedle = mapNeedle(layer, bed, needle);
 	k.miss(direction, mappedNeedle.bed + mappedNeedle.needle, carrier);
 }
 
-function tuck (direction, bed, needle, carrier) {
-	var mappedNeedle = mapNeedle(carrier, bed, needle);
+function tuck (layer, direction, bed, needle, carrier) {
+	var mappedNeedle = mapNeedle(layer, bed, needle);
 	k.tuck(direction, mappedNeedle.bed + mappedNeedle.needle, carrier);
 }
 
-function drop (carrier, bed, needle) {
-	var mappedNeedle = mapNeedle(bed, needle);
+function drop (layer, bed, needle) {
+	var mappedNeedle = mapNeedle(layer, bed, needle);
 	k.drop(mappedNeedle.bed + mappedNeedle.needle);
 }
 
-function amiss (carrier, bed, needle) {
-	var mappedNeedle = mapNeedle(carrier, bed, needle);
+function amiss (layer, bed, needle) {
+	var mappedNeedle = mapNeedle(layer, bed, needle);
 	k.amiss(mappedNeedle.bed + mappedNeedle.needle);
 }
 
-function split (direction, fromBed, fromNeedle, toBed, toNeedle, carrier) {
+function split (layer, direction, fromBed, fromNeedle, toBed, toNeedle, carrier) {
 	if (fromBed == toBed || (fromBed == "f" && toBed == "fs")|| (fromBed == "fs" && toBed == "f")|| (fromBed == "b" && toBed == "bs")|| (fromBed == "bs" && toBed == "b")) {
 		console.log("cannot split to same bed! (you'll need to split there, then xfer back) attempted: ", fromBed, fromNeedle, toBed, toNeedle);
 	}
 	else {
-		var mappedFrom = mapNeedle(carrier, fromBed, fromNeedle);
-		var mappedTo = mapNeedle(carrier, toBed, toNeedle);
+		var mappedFrom = mapNeedle(layer, fromBed, fromNeedle);
+		var mappedTo = mapNeedle(layer, toBed, toNeedle);
 		var offset = mappedTo.needle - mappedFrom.needle;
 		if (fromBed == "f" || fromBed == "fs") offset = 0 - offset;
 		k.rack(offset);
@@ -246,13 +248,13 @@ function yarnOut (carrier) {
 	carriersInAction[carrier] = false;
 }
 
-function xfer (carrier, fromBed, fromNeedle, toBed, toNeedle) {
+function xfer (fromLayer, fromBed, fromNeedle, toLayer, toBed, toNeedle) {
 	if (fromBed == toBed || (fromBed == "f" && toBed == "fs")|| (fromBed == "fs" && toBed == "f")|| (fromBed == "b" && toBed == "bs")|| (fromBed == "bs" && toBed == "b")) {
 		console.log("cannot xfer to same bed! attempted: ", fromBed, fromNeedle, toBed, toNeedle);
 	}
 	else {
-		var mappedFrom = mapNeedle(carrier, fromBed, fromNeedle);
-		var mappedTo = mapNeedle(carrier, toBed, toNeedle);
+		var mappedFrom = mapNeedle(fromLayer, fromBed, fromNeedle);
+		var mappedTo = mapNeedle(toLayer, toBed, toNeedle);
 		var offset = mappedTo.needle - mappedFrom.needle;
 		if (fromBed == "f" || fromBed == "fs") offset = 0 - offset;
 		if (offset!=alignment) k.rack(offset);
