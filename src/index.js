@@ -11,8 +11,9 @@ import { planner } from './knitPlanner';
 var perspective = false;
 var orbit = true;
 var numberOfSheets = 3;
-var stitchSize = 2;
-var stitchSpacing = 5;
+var stitchSize = 1.5;
+var stitchSpacing = 2;
+var aspectRatio = 4;
 var yarnWidth = stitchSize;
 var sheetWidth = 20;
 var sheetHeight = 80;
@@ -268,7 +269,7 @@ class Stitch extends THREE.Mesh {
 	}
 	moveToPos(newPos) {
 		this.layerPosition = newPos;
-		this.position.set(stitchSpacing*this.relationConfig.column, stitchSpacing*this.relationConfig.row, stitchSpacing*this.layerPosition);
+		this.position.set(stitchSpacing*aspectRatio*this.relationConfig.column, stitchSpacing*this.relationConfig.row, stitchSpacing*3*this.layerPosition);
 	}
 	setRelations(relations) {
 		this.relationConfig = relations;
