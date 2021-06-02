@@ -17,9 +17,17 @@ var aspectRatio = 4;
 var yarnWidth = stitchSize;
 var sheetWidth = 20;
 var sheetHeight = 80;
-var sheetColors = ["#00ffff", "#ffff00", "#ff00ff"];
+
+var carrierConfig = {
+	"4": "#00ffff",
+	"3": "#ffff00",
+	"5": "#ff00ff"
+}
+var carriers = Object.keys(carrierConfig);
+
+// var sheetColors = ["#00ffff", "#ffff00", "#ff00ff"];
 // var backgrounds = [new THREE.Color(sheetColors[0]).offsetHSL(0,-0.5,-0.1), new THREE.Color(sheetColors[sheetColors.length-1]).offsetHSL(0,-0.5,-0.1)]
-var backgrounds = [new THREE.Color(sheetColors[0]).offsetHSL(0,-0.6,0.2), new THREE.Color(sheetColors[sheetColors.length-1]).offsetHSL(0,-0.6,0.2)]
+var backgrounds = [new THREE.Color(carrierConfig[carriers[0]]).offsetHSL(0,-0.6,0.2), new THREE.Color(carrierConfig[carriers[carriers.length-1]]).offsetHSL(0,-0.6,0.2)]
 
 var scene, renderer, camera, cubes, geom, raycaster, mouse, intersects, controls;
 var sheets = [];
@@ -47,8 +55,10 @@ window.onload = function() {
 	if (perspective) camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
 	else camera = new THREE.OrthographicCamera( window.innerWidth  / -16, window.innerWidth  /16, window.innerHeight /16, window.innerHeight / -16, 0.001, 1000 );
 	// init the sheets...
+
+	var sheetNames = ["a", "b", "c"];
 	for (var i = 0; i<numberOfSheets; i++) {
-		var thisSheet = new Sheet(sheetWidth, sheetHeight, sheetColors[i%sheetColors.length], i);
+		var thisSheet = new Sheet(sheetWidth, sheetHeight, carriers[i%carriers.length], i, sheetNames[i]);
 		sheets.push(thisSheet);
 		scene.add(thisSheet);
 
@@ -100,7 +110,7 @@ function initText() {
 	instructions.id = "instructions";
 	instructions.setAttribute("style", 'position: absolute; top: 1em; left: 1em; color: white; font-family: "Helvetica Neue", Helvetica, sans-serif; font-weight: bold;');
 	document.body.appendChild( instructions );
-	instructions.innerHTML = "click to select<br>shift-click to rectangle-select<br>'d' to deselect all<br>left/right arrows to move selected stitches<br>'k' to generate and download a knitout file";
+	instructions.innerHTML = "click to select<br>shift-click to rectangle-select<br>'d' to deselect all<br>left/right arrows to move selected stitches<br>'k' to generate and download a knitout file<br>'e' to export as json";
 }
 
 function keyPress( e ) {
@@ -124,9 +134,26 @@ function keyPress( e ) {
 		selected.clear();
 	}
 	if (e.code == "KeyK") {
-		var blob = new Blob([planner(zipStitches(sheets))], {type: "text/plain;charset=utf-8"});
+		var blob = new Blob([planner(data)], {type: "text/plain;charset=utf-8"});
 		saveAs(blob, "trilayer.k");
 	}
+	if (e.code == "KeyE") {
+		var blob = new Blob([JSON.stringify(data)], {type: "text/json"});
+		saveAs(blob, "trilayer.json");		
+	}
+}
+
+function getData () {
+	var chart = zipStitches(sheets);
+	var sheetGaugeAllocation = {};
+	for (var i=0; i<sheets.length; i++) {
+		sheetGaugeAllocation[sheets[i].name] = i;
+	}
+	return {
+		chart: chart,
+		carriers: carrierConfig,
+		sheetGaugeAllocation: sheetGaugeAllocation
+	};
 }
 
 function onMouseMove( e ) {
@@ -231,15 +258,23 @@ function animate() {
 function zipStitches(sheets) {
 	var zippedStitches = []
 	for (var h=0; h<sheetHeight; h++) {
-		var rowGroup = [];
+		var rowGroup = {};
+		var stackOrders = [];
+		var colors = {};
+		sheets.forEach(function (thisSheet) {
+			colors[thisSheet.name]=[];
+		});
 		for (var w=0; w<sheetWidth; w++) {
 			var stitchOrder = [];
 			sheets.forEach(function (thisSheet) {
 				var sheetStitch = thisSheet.stitches[h][w];
-				stitchOrder[sheetStitch.layerPosition] = thisSheet.startPos; // put the "name"(canonical number / startPos) of the sheet at the position that that stitch is currently at
+				colors[thisSheet.name].push(sheetStitch.yarn);
+				stitchOrder[sheetStitch.layerPosition] = thisSheet.name; // put the "name"(canonical number / startPos) of the sheet at the position that that stitch is currently at
 			});
-			rowGroup.push(stitchOrder);
+			stackOrders.push(stitchOrder);
 		}
+		rowGroup.stackOrders = stackOrders;
+		rowGroup.colors = colors;
 		zippedStitches.push(rowGroup);
 	}
 	return zippedStitches;
@@ -247,13 +282,14 @@ function zipStitches(sheets) {
 
 
 class Stitch extends THREE.Mesh {
-	constructor(sheet, layerPos, color) {
+	constructor(sheet, layerPos, yarn) {
 		// relations: row, column, neighborBefore, neighborAfter, parent, child
 		var geom = new THREE.SphereGeometry( stitchSize, 32, 32 );
-		var mat = new THREE.MeshToonMaterial({color: color});
+		var mat = new THREE.MeshToonMaterial({color: carrierConfig[yarn]});
 		super( geom, mat );
 		this.selected = false;
-		this.color = color;
+		this.yarn = yarn;
+		this.color = carrierConfig[this.yarn];
 		this.highlightColor = new THREE.Color(this.color).offsetHSL(0,-0.2,0.5)
 		this.relationConfig = {};
 		this.sheet = sheet;
@@ -327,7 +363,7 @@ class Stitch extends THREE.Mesh {
  }
 
 class Noodle extends THREE.Mesh {
-	constructor(sheet, stitches, color) {
+	constructor(sheet, stitches, yarn) {
 		var locs = [];
 		for (var i=0; i<stitches.length;i++) {
 			var pos = stitches[i].position;
@@ -335,6 +371,7 @@ class Noodle extends THREE.Mesh {
 		}
 		var line = new MeshLine();
 		line.setPoints(locs);
+		var color = carrierConfig[yarn];
 		var mat = new MeshLineMaterial({ color : color, linewidth: yarnWidth, sizeAttenuation:true});
 
 		super(line, mat);
@@ -357,11 +394,12 @@ class Noodle extends THREE.Mesh {
 
 
 class Sheet extends THREE.Group {
-	constructor(width, height, color, startPos) {
+	constructor(width, height, yarn, startPos, name) {
 		super();
 		this.height = height;
 		this.width = width;
-		this.color = color;
+		this.name = name;
+		this.color = carrierConfig[this.yarn];
 		this.startPos = startPos;
 		this.stitches = [];
 		this.noodles = [];
@@ -370,7 +408,7 @@ class Sheet extends THREE.Group {
 			var rowGroup = [];
 			for (var w=0; w<width; w++) {
 				// mat.color.setRGB(0,h/height, w/width);
-				var thisStitch = new Stitch(this, startPos, color);
+				var thisStitch = new Stitch(this, startPos, yarn);
 				rowGroup.push(thisStitch);
 			}
 			this.stitches.push(rowGroup);
@@ -384,7 +422,7 @@ class Sheet extends THREE.Group {
 				if (w<this.stitches[h].length-1) neighborAfter = this.stitches[h][w+1];
 				this.stitches[h][w].setRelations({row: h, column: w, neighborBefore:neighborBefore, neighborAfter:neighborAfter, parent:parent, child:child});
 			}
-			var thisNoodle = new Noodle(this, this.stitches[h], color);
+			var thisNoodle = new Noodle(this, this.stitches[h], yarn);
 			this.noodles.push(thisNoodle);
 		}
 	}
