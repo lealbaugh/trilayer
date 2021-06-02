@@ -180,7 +180,7 @@ function updateHover (e) {
 	intersects = raycaster.intersectObjects( scene.children, true ); //recursive = true
 	for( var i = 0; i < intersects.length; i++ ) {
 		var obj = intersects[i].object;
-		if (obj.type=="stitch"){
+		if (obj.type=="stitch" && ((obj.layerPosition == 0 && facing.z>0) || (obj.layerPosition == numberOfSheets-1 && facing.z<=0))){
 			hovered.push(obj);
 		}
 	}
@@ -191,11 +191,9 @@ function onMouseClick( e ) {
 	
 	if (hovered.length>0) {
 		hovered.forEach(function(obj){
-			if ((obj.layerPosition == 0 && facing.z>0) || (obj.layerPosition == numberOfSheets-1 && facing.z<=0)) {
-				var state = obj.toggleSelection();
-				if (state) selected.add(obj);
-				else selected.delete(obj);
-			}
+			var state = obj.toggleSelection();
+			if (state) selected.add(obj);
+			else selected.delete(obj);
 		});
 
 		// if shift key and something is already selected, rectangle-select everything between the prev and this one
