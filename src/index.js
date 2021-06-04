@@ -10,33 +10,37 @@ import { planner } from './knitPlanner';
 
 var perspective = false;
 var orbit = true;
-var numberOfSheets = 3;
-var stitchSize = 1.5;
-var stitchSpacing = 2;
-var aspectRatio = 4;
-var yarnWidth = stitchSize;
-var sheetWidth = 20;
-var sheetHeight = 80;
 
-var carrierConfig = {
-	"4": "#00ffff",
-	"3": "#ffff00",
-	"5": "#ff00ff"
+var settings = {
+	numberOfSheets: 3,
+	stitchSize: 1.5,
+	stitchSpacing: 2,
+	aspectRatio: 4,
+	layerSpacing: 3,
+	yarnWidth: 1.5,
+	sheetWidth: 20,
+	sheetHeight: 80,
+	carrierConfig:{
+		"4": "#00ffff",
+		"3": "#ffff00",
+		"5": "#ff00ff"
+	},
+	sheetNames: ['a', 'b', 'c', 'd', 'e'],
 }
-var carriers = Object.keys(carrierConfig);
 
 // var sheetColors = ["#00ffff", "#ffff00", "#ff00ff"];
 // var backgrounds = [new THREE.Color(sheetColors[0]).offsetHSL(0,-0.5,-0.1), new THREE.Color(sheetColors[sheetColors.length-1]).offsetHSL(0,-0.5,-0.1)]
-var backgrounds = [new THREE.Color(carrierConfig[carriers[0]]).offsetHSL(0,-0.6,0.2), new THREE.Color(carrierConfig[carriers[carriers.length-1]]).offsetHSL(0,-0.6,0.2)]
+// var backgrounds = [new THREE.Color(carrierConfig[carriers[0]]).offsetHSL(0,-0.6,0.2), new THREE.Color(carrierConfig[carriers[carriers.length-1]]).offsetHSL(0,-0.6,0.2)]
 
-var scene, renderer, camera, cubes, geom, raycaster, mouse, intersects, controls;
+var scene, renderer, camera, stitchGeom, raycaster, mouse, intersects, controls;
+var yarnMats = {};
 var sheets = [];
+var backgrounds = [];
 var hovered = [];
 var selected = new Set([]);
 var facing = new THREE.Vector3();
 
 window.onload = function() {
-
 // Set the scene
 	scene = new THREE.Scene();
 	
@@ -48,7 +52,6 @@ window.onload = function() {
 	// lights and background
 	const light = new THREE.HemisphereLight( 0xeeeeee, 0x555555, 1 );
 	scene.add( light );
-	scene.background = backgrounds[0];
 
 // Camera
 	// Set up camera
@@ -56,19 +59,10 @@ window.onload = function() {
 	else camera = new THREE.OrthographicCamera( window.innerWidth  / -16, window.innerWidth  /16, window.innerHeight /16, window.innerHeight / -16, 0.001, 1000 );
 	// init the sheets...
 
-	var sheetNames = ["a", "b", "c"];
-	for (var i = 0; i<numberOfSheets; i++) {
-		var thisSheet = new Sheet(sheetWidth, sheetHeight, carriers[i%carriers.length], i, sheetNames[i]);
-		sheets.push(thisSheet);
-		scene.add(thisSheet);
-
-	}
-	for (var i = 0; i<sheets.length; i++) {
-		var thisSheet = sheets[i];
-		for (var j=0; j<sheets.length; j++) {
-			if (i!=j) thisSheet.setSisters(sheets[j]);
-		}
-	}
+	yarnMats = initYarns();
+	sheets = initSheets();
+	backgrounds = initBackgrounds();
+	scene.background = backgrounds[0]; // has to be done after initSheets because that also inits the background colors
 	// ...and point the camera at 'em
 	// camera.position.set( 400, 25, 40 );
 	camera.position.set( -150, 100, -150 );
@@ -86,7 +80,9 @@ window.onload = function() {
 	window.addEventListener( 'click', onMouseClick, false );
 	window.addEventListener( 'resize', onWindowResize, false );
 	window.addEventListener( 'keydown', keyPress, false );
-
+	window.addEventListener( 'drop', onDrop, false);
+	window.addEventListener("dragover", onDragOver, false);
+	window.addEventListener("dragenter", onDragEnter, false);
 
 	if (orbit) {
 		controls = new OrbitControls( camera, renderer.domElement );
@@ -99,10 +95,103 @@ window.onload = function() {
 		controls.panSpeed = 0.8;
 	}
 
+	initText();
+
 	// ...begin.
 	animate();
 
-	initText();
+}
+
+function animate() {
+	requestAnimationFrame( animate );
+	controls.update();
+	renderer.render( scene, camera );
+	camera.getWorldDirection(facing);
+	if (facing.z<0) scene.background = backgrounds[0];
+	else scene.background = backgrounds[1];
+}
+
+function initYarns() {
+	var oldYarns = [];
+	for (var yarn in yarnMats){
+		oldYarns.push(yarnMats[yarn]);
+	}
+	var newYarnMats = {};
+	for (var carrier in settings.carrierConfig) {
+		var carrierColor = settings.carrierConfig[carrier];
+		var selectedColor = new THREE.Color(carrierColor).offsetHSL(0,0.0,0.5);
+		var hoveredColor = new THREE.Color(carrierColor).offsetHSL(0.5,0.0,0.4);
+		newYarnMats[carrier] = new THREE.MeshToonMaterial({color: carrierColor});
+		newYarnMats[carrier+"selected"] = new THREE.MeshToonMaterial({color: selectedColor});
+		newYarnMats[carrier+"hovered"] = new THREE.MeshToonMaterial({color: hoveredColor});
+	}
+	oldYarns.forEach(function(thisYarn) {
+		thisYarn.dispose;
+	});
+	return newYarnMats;
+}
+
+function initSheets() {
+	var oldSheets = [];
+	sheets.forEach(function (thisSheet) {
+		oldSheets.push(thisSheet);
+	});
+
+	// make the geometry and materials
+	stitchGeom = new THREE.SphereGeometry( settings.stitchSize, 8, 8 );
+
+	// new place to hold the sheets
+	var newSheets = [];
+
+	var carriers = Object.keys(settings.carrierConfig);
+	for (var i = 0; i<settings.numberOfSheets; i++) {
+		var thisSheet = new Sheet(settings.sheetWidth, settings.sheetHeight, carriers[i%carriers.length], i, settings.sheetNames[i]);
+		newSheets.push(thisSheet);
+		scene.add(thisSheet);
+
+	}
+	for (var i = 0; i<newSheets.length; i++) {
+		var thisSheet = newSheets[i];
+		for (var j=0; j<newSheets.length; j++) {
+			if (i!=j) thisSheet.setSisters(newSheets[j]);
+		}
+	}
+	oldSheets.forEach(function(thisSheet) {
+		thisSheet.children.forEach(function(thisThing) {
+			thisThing.dispose;
+		});
+		thisSheet.dispose;
+	});
+	return newSheets;
+}
+
+function initBackgrounds() {
+	var newBackgrounds = [];
+	newBackgrounds.push(new THREE.Color(sheets[0].color).offsetHSL(0,-0.6,0.2));
+	newBackgrounds.push(new THREE.Color(sheets[sheets.length-1].color).offsetHSL(0,-0.6,0.2));
+	return newBackgrounds;
+}
+
+function updateSheets(chart) {
+	for (var h=0; h<chart.length; h++) {
+		var row = chart[h].stackOrders;
+		for (var s=0; s<row.length; s++) {
+			var stack = row[s];
+			for (var pos = 0; pos<stack.length; pos++) {
+				sheets.forEach(function (thisSheet) {
+					if (thisSheet.name == stack[pos]) {
+						if (thisSheet.stitches[h] && thisSheet.stitches[h][s]) {
+							// the check is because it's possible to update from a different chart size from before
+							thisSheet.stitches[h][s].moveToPos(pos);
+						}
+					}
+				})
+			}
+		}
+	}
+	sheets.forEach(function (sheet) {
+		sheet.updateNoodles();
+	});
 }
 
 function initText() {
@@ -110,65 +199,17 @@ function initText() {
 	instructions.id = "instructions";
 	instructions.setAttribute("style", 'position: absolute; top: 1em; left: 1em; color: white; font-family: "Helvetica Neue", Helvetica, sans-serif; font-weight: bold;');
 	document.body.appendChild( instructions );
-	instructions.innerHTML = "click to select<br>shift-click to rectangle-select<br>'d' to deselect all<br>left/right arrows to move selected stitches<br>'k' to generate and download a knitout file<br>'e' to export as json";
+	instructions.innerHTML = "click to select<br>shift-click to rectangle-select<br>'d' to deselect all<br>left/right arrows to move selected stitches<br>'k' to generate and download a knitout file<br>'e' to export as json<br>drag'n'drop a json to load it";
 }
 
-function keyPress( e ) {
-	if (e.code == "ArrowRight" || e.code == "ArrowLeft") {
-		if (selected.size>0) {
-			var dir = 0;
-			if (e.code == "ArrowRight") dir = 1;
-			else if (e.code == "ArrowLeft") dir = -1;
-			selected.forEach(function (obj) {
-				obj.transpose(dir);
-			});
-			sheets.forEach(function (sheet) {
-				sheet.updateNoodles();
-			});
-		}
-	}
-	if (e.code == "KeyD") {
-		selected.forEach(function (obj) {
-			obj.unselect();
-		});
-		selected.clear();
-	}
-	if (e.code == "KeyK") {
-		var blob = new Blob([planner(data)], {type: "text/plain;charset=utf-8"});
-		saveAs(blob, "trilayer.k");
-	}
-	if (e.code == "KeyE") {
-		var blob = new Blob([JSON.stringify(data)], {type: "text/json"});
-		saveAs(blob, "trilayer.json");		
-	}
-}
-
-function getData () {
-	var chart = zipStitches(sheets);
-	var sheetGaugeAllocation = {};
-	for (var i=0; i<sheets.length; i++) {
-		sheetGaugeAllocation[sheets[i].name] = i;
-	}
-	return {
-		chart: chart,
-		carriers: carrierConfig,
-		sheetGaugeAllocation: sheetGaugeAllocation
-	};
-}
+// =================================================== 
+// =================================================== 
+// ===================== Events ====================== 
+// =================================================== 
+// =================================================== 
 
 function onMouseMove( e ) {
 	updateHover(e);
-
-	// reset all to default color
-	sheets.forEach(function(sheet){
-		sheet.resetColor();
-	});
-
-	// turn hovered white
-	hovered.forEach(function(obj){
-		// console.log(typeof(obj));
-		obj.material.color.setRGB( 1.0, 1.0, 1.0 );
-	});
 }
 
 function updateHover (e) {
@@ -180,10 +221,20 @@ function updateHover (e) {
 	intersects = raycaster.intersectObjects( scene.children, true ); //recursive = true
 	for( var i = 0; i < intersects.length; i++ ) {
 		var obj = intersects[i].object;
-		if (obj.type=="stitch" && ((obj.layerPosition == 0 && facing.z>0) || (obj.layerPosition == numberOfSheets-1 && facing.z<=0))){
+		if (obj.type=="stitch" && ((obj.layerPosition == 0 && facing.z>0) || (obj.layerPosition == settings.numberOfSheets-1 && facing.z<=0))){
 			hovered.push(obj);
 		}
 	}
+	// reset all to default color
+	sheets.forEach(function(sheet){
+		sheet.resetColor();
+	});
+
+	// turn hovered to highlight color
+	hovered.forEach(function(obj){
+		// console.log(typeof(obj));
+		obj.hover();
+	});
 }
 
 function onMouseClick( e ) {
@@ -226,6 +277,75 @@ function rectangleSelect(topLeft, bottomRight) {
 
 }
 
+
+function keyPress( e ) {
+	if (e.code == "ArrowRight" || e.code == "ArrowLeft") {
+		if (selected.size>0) {
+			var dir = 0;
+			if (e.code == "ArrowRight") dir = 1;
+			else if (e.code == "ArrowLeft") dir = -1;
+			selected.forEach(function (obj) {
+				obj.transpose(dir);
+			});
+			sheets.forEach(function (sheet) {
+				sheet.updateNoodles();
+			});
+		}
+	}
+	if (e.code == "KeyD") {
+		selected.forEach(function (obj) {
+			obj.unselect();
+		});
+		selected.clear();
+	}
+	if (e.code == "KeyK") {
+		var blob = new Blob([planner(getData())], {type: "text/plain;charset=utf-8"});
+		saveAs(blob, "trilayer.k");
+	}
+	if (e.code == "KeyE") {
+		var blob = new Blob([JSON.stringify(getData())], {type: "text/json"});
+		saveAs(blob, "trilayer.json");		
+	}
+	if (e.code == "KeyS") {
+		console.log(settings);
+		console.log(sheets);
+	}
+}
+
+
+
+function onDragOver(e) {
+  e.preventDefault();
+}
+function onDragEnter(e) {
+  e.preventDefault();
+}
+function onDrop( e ) {
+	if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+		var files = e.dataTransfer.files;
+		var reader = new FileReader();
+		reader.onload = function ( e ) {
+			var result = event.target.result;
+			try {
+				var data = JSON.parse(result);
+				importData(data);
+			}
+			catch (error) {
+				console.log("failed to import as JSON");
+				console.log(error);
+			}
+		};
+		try {
+			reader.readAsText(files.item(0));
+		}
+		catch {
+			console.log("not text");
+		}
+	}
+	e.preventDefault();
+}
+
+
 function onWindowResize( e ) {
 	const aspect = window.innerWidth / window.innerHeight;
 
@@ -244,25 +364,81 @@ function onWindowResize( e ) {
 	renderer.setSize( window.innerWidth, window.innerHeight );
 }
 
-function animate() {
-	requestAnimationFrame( animate );
-	controls.update();
-	renderer.render( scene, camera );
-	camera.getWorldDirection(facing);
-	if (facing.z<0) scene.background = backgrounds[0];
-	else scene.background = backgrounds[1];
+
+
+// =================================================== 
+// =================================================== 
+// ================= Import/Export =================== 
+// =================================================== 
+// =================================================== 
+
+
+
+function importData(data) {
+	var needsChartUpdate = false;
+	var needsSettingsUpdate = false;
+	var needsNewSheets = false;
+
+	var chart = [];
+	if (data.settings) {
+		for (var setting in data.settings) {
+			if (settings[setting] != data.settings[setting]) {
+				settings[setting] = data.settings[setting];
+				needsSettingsUpdate = true;
+				if (setting == "sheetWidth" || setting == "sheetHeight") { // we need to re-roll the chart if so
+					needsNewSheets = true;
+				}
+			}
+		}
+	}
+
+	// see if it includes a positions chart too
+	if (data.chart) {
+		// if so, stash them and make a note to update the chart
+		chart = data.chart;
+		needsChartUpdate = true;
+	}
+	else if (needsSettingsUpdate) { 
+	// we can keep the stitch positions, so stash the existing ones
+	// it's okay if sheets are now a different size -- we've written the position updating to account for that
+		chart = zipStitches(sheets);
+	}
+
+	hovered = [];
+	selected.clear();
+
+	if (needsSettingsUpdate) {
+		// re-init all
+		yarnMats = initYarns();
+		sheets = initSheets();
+		backgrounds = initBackgrounds();
+
+		needsChartUpdate = true;
+	}
+
+	if (needsChartUpdate) {
+		updateSheets(chart);
+	}
+}
+
+function getData () {
+	var chart = zipStitches(sheets);
+	return {
+		settings: settings,
+		chart: chart
+	};
 }
 
 function zipStitches(sheets) {
 	var zippedStitches = []
-	for (var h=0; h<sheetHeight; h++) {
+	for (var h=0; h<settings.sheetHeight; h++) {
 		var rowGroup = {};
 		var stackOrders = [];
 		var colors = {};
 		sheets.forEach(function (thisSheet) {
 			colors[thisSheet.name]=[];
 		});
-		for (var w=0; w<sheetWidth; w++) {
+		for (var w=0; w<settings.sheetWidth; w++) {
 			var stitchOrder = [];
 			sheets.forEach(function (thisSheet) {
 				var sheetStitch = thisSheet.stitches[h][w];
@@ -279,36 +455,52 @@ function zipStitches(sheets) {
 }
 
 
+
+
+
+// =================================================== 
+// =================================================== 
+// ===================== Classes ===================== 
+// =================================================== 
+// =================================================== 
+
+
+
+
+
+
+
+
+
+
 class Stitch extends THREE.Mesh {
 	constructor(sheet, layerPos, yarn) {
 		// relations: row, column, neighborBefore, neighborAfter, parent, child
-		var geom = new THREE.SphereGeometry( stitchSize, 32, 32 );
-		var mat = new THREE.MeshToonMaterial({color: carrierConfig[yarn]});
-		super( geom, mat );
+		super( stitchGeom, yarnMats[yarn] );
 		this.selected = false;
 		this.yarn = yarn;
-		this.color = carrierConfig[this.yarn];
-		this.highlightColor = new THREE.Color(this.color).offsetHSL(0,-0.2,0.5)
 		this.relationConfig = {};
 		this.sheet = sheet;
 		this.layerPosition = layerPos;
 		this.sheet.add(this);
 		this.sisters = [];
 		this.type = "stitch";
+		this.plainMat = yarnMats[this.yarn];
+		this.selectedMat = yarnMats[this.yarn+"selected"];
+		this.hoveredMat = yarnMats[this.yarn+"hovered"];
 	}
 
-	resetColor(){
-		if (this.selected) this.material.color.set(this.highlightColor);
-		else this.material.color.set(this.color);
+	resetColor(verbose){
+		if (this.selected) this.material = this.selectedMat;
+		else this.material = this.plainMat;
 	}
 	moveToPos(newPos) {
 		this.layerPosition = newPos;
-		this.position.set(stitchSpacing*aspectRatio*this.relationConfig.column, stitchSpacing*this.relationConfig.row, stitchSpacing*3*this.layerPosition);
+		this.position.set(settings.stitchSpacing*settings.aspectRatio*this.relationConfig.column, settings.stitchSpacing*this.relationConfig.row, settings.stitchSpacing*settings.layerSpacing*this.layerPosition);
 	}
 	setRelations(relations) {
 		this.relationConfig = relations;
 		this.moveToPos(this.layerPosition);
-		// this.position.set(stitchSpacing*this.relationConfig.column, stitchSpacing*this.relationConfig.row, stitchSpacing*this.layerPosition);
 	}
 	addSister(sister) {
 		this.sisters.push(sister);
@@ -316,32 +508,32 @@ class Stitch extends THREE.Mesh {
 
 	transpose (dir) {
 		var newPos = this.layerPosition + dir;
-		if (newPos>=0 && newPos<numberOfSheets) {
+		if (newPos>=0 && newPos<settings.numberOfSheets) {
 			var oldPos = this.layerPosition;
-			// console.log(newPos);
 			this.moveToPos(newPos);
 			this.sisters.forEach(function (sis) {
 				if (sis.layerPosition == newPos) sis.moveToPos(oldPos);
 			});
 		}
 	}
+	hover() {
+		this.material = this.hoveredMat;
+	}
 	select() {
 		this.selected = true;
-		this.material.color.set(this.highlightColor);
+		this.material = this.selectedMat;
 		this.sisters.forEach(function (sis) {
 			sis.unselect();
 		});
 	}
 	unselect () {
 		this.selected = false;
-		this.material.color.set(this.color);
+		this.material = this.plainMat;
 	}
 	toggleSelection() {
 		// this.selected = !this.selected;
 		if (this.selected) {
 			this.unselect()
-			// console.log(this.relationConfig.row, this.relationConfig.column);
-			// this.material.color.set(this.highlightColor);
 		}
 		else this.select();
 		return this.selected;
@@ -349,9 +541,6 @@ class Stitch extends THREE.Mesh {
 	get relations() {
 		return this.relationConfig;
 	}
-	// get layerPos() {
-	// 	return this.layerPosition;
-	// }
 	get row() {
 		return this.relationConfig.row;
 	}
@@ -369,8 +558,8 @@ class Noodle extends THREE.Mesh {
 		}
 		var line = new MeshLine();
 		line.setPoints(locs);
-		var color = carrierConfig[yarn];
-		var mat = new MeshLineMaterial({ color : color, linewidth: yarnWidth, sizeAttenuation:true});
+		var color = settings.carrierConfig[yarn];
+		var mat = new MeshLineMaterial({ color : color, linewidth: settings.yarnWidth, sizeAttenuation:true});
 
 		super(line, mat);
 		this.stitches = stitches;
@@ -397,7 +586,8 @@ class Sheet extends THREE.Group {
 		this.height = height;
 		this.width = width;
 		this.name = name;
-		this.color = carrierConfig[this.yarn];
+		this.yarn = yarn;
+		this.color = settings.carrierConfig[this.yarn];
 		this.startPos = startPos;
 		this.stitches = [];
 		this.noodles = [];
@@ -427,10 +617,7 @@ class Sheet extends THREE.Group {
 	setSisters(otherSheet) {
 		// console.log(otherSheet.stitches.length, otherSheet.stitches[0].length);
 		for (var h=0; h<this.stitches.length; h++) {
-			// console.log("h",h);
 			for (var w=0; w<this.stitches[h].length; w++) {
-				// console.log("w",w);
-				// console.log(otherSheet.stitches[h][w]);
 				this.stitches[h][w].addSister(otherSheet.stitches[h][w]);
 			}
 		}
@@ -442,6 +629,15 @@ class Sheet extends THREE.Group {
 			}
 		}
 	}
+
+	applyToAllStitches(action) {
+		for (var h=0; h<this.stitches.length; h++) {
+			for (var w=0; w<this.stitches[h].length; w++) {
+				action(this.stitches[h][w]);
+			}
+		}
+	}
+
 	updateNoodles() {
 		this.noodles.forEach(function (noodle) {
 			noodle.update();

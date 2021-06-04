@@ -6,10 +6,14 @@ var carriersInAction = {};
 var hookInAction = false;
 var k;
 
-var allCarriers = ["1", "2", "3"];
+var allCarriers = [];
 var sheetGaugeAllocation = {};
-var numberOfSheets = 3;
+var numberOfSheets;
 // data: {
+//	 settings: {
+//	 	numberOfSheets: 3,
+//	 	sheetNames: ['a', 'b', 'c', 'd', 'e'],
+//	 }
 // 	chart: [ //list of rows; each rowChunks looks like:
 // 		{
 // 			stackOrders: [['a','b','c'], ['c','b','a']] // stackOrder per stitch in rowChunks
@@ -28,11 +32,6 @@ var numberOfSheets = 3;
 // 		"4": 'yellow',
 // 		"5": 'magenta'
 // 	}
-// 	sheetGaugeAllocation: {
-//		'a': 0,
-//		'b': 1,
-//		'c': 2
-//	}
 // }
 
 export const planner = function (data) {
@@ -42,9 +41,9 @@ export const planner = function (data) {
 	k.addHeader('X-Presser-Mode','auto');
 	k.addHeader('Position','Center');
 
-	allCarriers = Object.keys(data.carriers);
-	sheetGaugeAllocation = data.sheetGaugeAllocation;
-	numberOfSheets = Object.keys(sheetGaugeAllocation).length;
+	allCarriers = Object.keys(data.settings.carrierConfig);
+	sheetGaugeAllocation = makeSheetGaugeAllocation(data.settings.sheetNames);
+	numberOfSheets = data.settings.numberOfSheets;
 	// do the main thing
 	trilayerSwatch(data.chart);
 
@@ -205,6 +204,13 @@ function chunkify(chartRow) {
 	return chunks;
 }
 
+function makeSheetGaugeAllocation(names) {
+	var allocation = {};
+	for (var i=0; i<names.length; i++) {
+		allocation[names[i]] = i;
+	}
+	return allocation;
+}
 
 function dropAll (chart) {
 	var row = chart[0].stackOrders;
